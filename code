@@ -1,0 +1,483 @@
+import React, { useState, useEffect } from 'react';
+
+const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+const weeksData = [
+  // Week 1
+  [
+    { content: 'Data Collection', backgroundColor: '#F9E79F' },
+    { content: 'Data Collection', backgroundColor: '#F9E79F' },
+    { content: 'Data Collection', backgroundColor: '#F9E79F' },
+    { content: 'Data Collection', backgroundColor: '#F9E79F' },
+    { content: 'Data Collection', backgroundColor: '#F9E79F' },
+    { content: 'Data Collection', backgroundColor: '#F9E79F' },
+    { content: '', backgroundColor: '' },
+  ],
+  // Week 2-4 data remains the same
+  [
+    { content: '', backgroundColor: '' },
+    { content: 'System Validations', backgroundColor: '#D5F5E3' },
+    { content: 'Data Shipped Back', backgroundColor: '', icon: 'truck' },
+    { content: 'Data Shipped Back', backgroundColor: '', icon: 'truck' },
+    { content: 'Upload to Server', backgroundColor: '#D5F5E3' },
+    { content: 'Data Checks & Preprocessing', backgroundColor: '#D5F5E3' },
+    { content: '', backgroundColor: '' },
+  ],
+  [
+    { content: '', backgroundColor: '' },
+    { content: 'Spatial QC', backgroundColor: '#D5F5E3' },
+    { content: 'Spatial QC', backgroundColor: '#D5F5E3' },
+    { content: '2nd Processing', backgroundColor: '#AED6F1' },
+    { content: '2nd Processing', backgroundColor: '#AED6F1' },
+    { content: 'Upload Raw data, Imagery, CSV files to RAS', backgroundColor: '#F1948A' },
+    { content: '', backgroundColor: '' },
+  ],
+  [
+    { content: '', backgroundColor: '' },
+    { content: '', backgroundColor: '' },
+    { content: '', backgroundColor: '' },
+    { content: '', backgroundColor: '' },
+    { content: '', backgroundColor: '' },
+    { content: '', backgroundColor: '' },
+    { content: '', backgroundColor: '' },
+  ],
+];
+
+const STAGES = [
+  'Data Collection',
+  'System Validations',
+  'Data Shipped Back',
+  'Upload to Server',
+  'Data Checks & Preprocessing',
+  'FIS Upload to RAS',
+  'Spatial QC',
+  '2nd Processing',
+  'Upload Raw data, Imagery, CSV files to RAS'
+];
+
+const STORAGE_KEY = 'batchTrackerData';
+const PROJECT_COLORS_KEY = 'projectColors';
+
+// Predefined colors for projects (using Tailwind-like colors that are distinct and professional)
+const PROJECT_COLORS = [
+  '#3B82F6', // blue-500
+  '#EF4444', // red-500
+  '#10B981', // emerald-500
+  '#8B5CF6', // violet-500
+  '#F59E0B', // amber-500
+  '#EC4899', // pink-500
+  '#6366F1', // indigo-500
+  '#14B8A6', // teal-500
+  '#F97316', // orange-500
+  '#6B7280', // gray-500
+];
+
+const BatchTracker = () => {
+  // Initialize state from localStorage if available
+  const [batches, setBatches] = useState(() => {
+    const savedData = localStorage.getItem(STORAGE_KEY);
+    return savedData ? JSON.parse(savedData) : [];
+  });
+  const [projectColors, setProjectColors] = useState(() => {
+    const savedColors = localStorage.getItem(PROJECT_COLORS_KEY);
+    return savedColors ? JSON.parse(savedColors) : {};
+  });
+  const [newBatchNumber, setNewBatchNumber] = useState('');
+  const [newProjectName, setNewProjectName] = useState('');
+  const [selectedBatch, setSelectedBatch] = useState(null);
+  const [selectedStage, setSelectedStage] = useState('');
+  const [notes, setNotes] = useState('');
+  const [draggedBatch, setDraggedBatch] = useState(null);
+
+  // Save to localStorage whenever data changes
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(batches));
+  }, [batches]);
+
+  useEffect(() => {
+    localStorage.setItem(PROJECT_COLORS_KEY, JSON.stringify(projectColors));
+  }, [projectColors]);
+
+  const getProjectColor = (projectName) => {
+    if (projectColors[projectName]) {
+      return projectColors[projectName];
+    }
+    
+    // Assign a new color if we don't have one for this project
+    const usedColors = Object.values(projectColors);
+    const availableColors = PROJECT_COLORS.filter(color => !usedColors.includes(color));
+    
+    // If we've used all colors, start reusing them
+    const newColor = availableColors.length > 0 
+      ? availableColors[0] 
+      : PROJECT_COLORS[Object.keys(projectColors).length % PROJECT_COLORS.length];
+    
+    setProjectColors(prev => ({
+      ...prev,
+      [projectName]: newColor
+    }));
+    
+    return newColor;
+  };
+
+  const getBatchId = (projectName, batchNumber) => {
+    const projectPrefix = projectName.trim().charAt(0).toUpperCase();
+    return `${projectPrefix}${batchNumber}`;
+  };
+
+  const addBatch = () => {
+    if (newBatchNumber.trim() && newProjectName.trim()) {
+      const batchId = getBatchId(newProjectName, newBatchNumber);
+      if (!batches.find(b => b.id === batchId)) {
+        setBatches([...batches, {
+          id: batchId,
+          number: newBatchNumber,
+          projectName: newProjectName,
+          stage: 'Data Collection',
+          position: { row: 0, col: 0 },
+          notes: '',
+          timestamp: new Date().toISOString()
+        }]);
+        setNewBatchNumber('');
+        setNewProjectName('');
+      }
+    }
+  };
+
+  const updateBatchStage = () => {
+    if (selectedBatch && selectedStage) {
+      setBatches(batches.map(batch => {
+        if (batch.id === selectedBatch) {
+          let position = findPositionForStage(selectedStage);
+          return {
+            ...batch,
+            stage: selectedStage,
+            position,
+            notes,
+            timestamp: new Date().toISOString()
+          };
+        }
+        return batch;
+      }));
+      setNotes('');
+    }
+  };
+
+  const findPositionForStage = (stageName) => {
+    for (let row = 0; row < weeksData.length; row++) {
+      for (let col = 0; col < weeksData[row].length; col++) {
+        if (weeksData[row][col].content === stageName) {
+          return { row, col };
+        }
+      }
+    }
+    return { row: 0, col: 0 };
+  };
+
+  const handleDragStart = (e, batch) => {
+    setDraggedBatch(batch);
+    e.dataTransfer.setData('text/plain', batch.id);
+    // Make the drag image semi-transparent
+    const dragImage = e.target.cloneNode(true);
+    dragImage.style.opacity = '0.5';
+    document.body.appendChild(dragImage);
+    e.dataTransfer.setDragImage(dragImage, 15, 15);
+    setTimeout(() => document.body.removeChild(dragImage), 0);
+  };
+
+  const handleDragOver = (e, row, col) => {
+    e.preventDefault();
+    if (weeksData[row][col].content) {
+      e.dataTransfer.dropEffect = 'move';
+    } else {
+      e.dataTransfer.dropEffect = 'none';
+    }
+  };
+
+  const handleDrop = (e, row, col) => {
+    e.preventDefault();
+    const batchId = e.dataTransfer.getData('text/plain');
+    const cell = weeksData[row][col];
+    const cellContent = Array.isArray(cell.content) ? cell.content[0] : cell.content;
+    
+    if (cellContent && draggedBatch) {
+      setBatches(batches.map(batch => {
+        if (batch.id === batchId) {
+          return {
+            ...batch,
+            position: { row, col },
+            stage: cellContent,
+            timestamp: new Date().toISOString()
+          };
+        }
+        return batch;
+      }));
+    }
+    setDraggedBatch(null);
+  };
+
+  const removeBatch = (batchId) => {
+    setBatches(batches.filter(batch => batch.id !== batchId));
+  };
+
+  return (
+    <div className="max-w-6xl mx-auto p-4 flex flex-col gap-4">
+      <h1 className="text-2xl font-bold">ARRB / RAS Workflow Batch Tracker</h1>
+      <p className="text-gray-600">Drag and drop batches to update their status, or use the dropdown menu below.</p>
+      
+      {/* Batch Management */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="border rounded-lg p-4">
+          <h2 className="text-xl font-semibold mb-4">Add New Batch</h2>
+          <div className="flex flex-col gap-2">
+            <input
+              type="text"
+              value={newProjectName}
+              onChange={(e) => setNewProjectName(e.target.value)}
+              placeholder="Enter project name"
+              className="border rounded px-3 py-2"
+            />
+            <input
+              type="text"
+              value={newBatchNumber}
+              onChange={(e) => setNewBatchNumber(e.target.value)}
+              placeholder="Enter batch number"
+              className="border rounded px-3 py-2"
+            />
+            <button
+              onClick={addBatch}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Add Batch
+            </button>
+          </div>
+        </div>
+
+        <div className="border rounded-lg p-4">
+          <h2 className="text-xl font-semibold mb-4">Update Batch Status</h2>
+          <div className="flex flex-col gap-2">
+            <select
+              value={selectedBatch || ''}
+              onChange={(e) => setSelectedBatch(e.target.value)}
+              className="border rounded px-3 py-2"
+            >
+              <option value="">Select Batch</option>
+              {batches.map(batch => (
+                <option key={batch.id} value={batch.id}>
+                  {batch.id} - {batch.projectName}
+                </option>
+              ))}
+            </select>
+            <select
+              value={selectedStage}
+              onChange={(e) => setSelectedStage(e.target.value)}
+              className="border rounded px-3 py-2"
+            >
+              <option value="">Select Stage</option>
+              {STAGES.map(stage => (
+                <option key={stage} value={stage}>{stage}</option>
+              ))}
+            </select>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add notes (optional)"
+              className="border rounded px-3 py-2 h-20"
+            />
+            <button
+              onClick={updateBatchStage}
+              className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+            >
+              Update Status
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Batch List */}
+      <div className="border rounded-lg p-4">
+        <h2 className="text-xl font-semibold mb-4">Active Batches</h2>
+        <div className="overflow-x-auto">
+          <table className="min-w-full">
+            <thead>
+              <tr className="bg-gray-50">
+                <th className="px-4 py-2 text-left">Batch ID</th>
+                <th className="px-4 py-2 text-left">Project</th>
+                <th className="px-4 py-2 text-left">Current Stage</th>
+                <th className="px-4 py-2 text-left">Last Updated</th>
+                <th className="px-4 py-2 text-left">Notes</th>
+                <th className="px-4 py-2 text-left">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {batches.map(batch => (
+                <tr key={batch.id} className="border-t">
+                  <td className="px-4 py-2">{batch.id}</td>
+                  <td className="px-4 py-2">{batch.projectName}</td>
+                  <td className="px-4 py-2">{batch.stage}</td>
+                  <td className="px-4 py-2">
+                    {new Date(batch.timestamp).toLocaleString()}
+                  </td>
+                  <td className="px-4 py-2">{batch.notes}</td>
+                  <td className="px-4 py-2">
+                    <button
+                      onClick={() => removeBatch(batch.id)}
+                      className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Workflow Visualization */}
+      <div className="overflow-x-auto border rounded-lg p-4">
+        <div className="relative w-full flex flex-col gap-4">
+          {/* Header row */}
+          <div className="border-b border-gray-300 flex h-20">
+            <div className="w-32 flex items-center justify-center" />
+            {dayNames.map((day) => (
+              <div
+                key={day}
+                className="border-l border-gray-300 flex items-center justify-center font-semibold w-32"
+              >
+                {day}
+              </div>
+            ))}
+          </div>
+
+          {/* Weeks rows */}
+          {weeksData.map((weekRow, wIdx) => (
+            <div
+              key={wIdx}
+              className="flex border-b border-gray-300 h-20"
+            >
+              <div className="border-r border-gray-300 flex items-center justify-center font-bold w-32">
+                Week {wIdx + 1}
+              </div>
+              {weekRow.map((cell, dIdx) => (
+                <div
+                  key={dIdx}
+                  className="border-r border-gray-300 flex items-center justify-center text-center p-1 relative w-32"
+                  style={{ 
+                    cursor: cell.content ? 'pointer' : 'not-allowed'
+                  }}
+                  onDragOver={(e) => handleDragOver(e, wIdx, dIdx)}
+                  onDrop={(e) => handleDrop(e, wIdx, dIdx)}
+                >
+                  {cell.icon === 'truck' ? (
+                    <div className="flex flex-col items-center justify-center text-sm">
+                      <span className="text-2xl">🚛</span>
+                      <span>{cell.content}</span>
+                    </div>
+                  ) : Array.isArray(cell.content) ? (
+                    <div className="flex flex-col gap-1 w-full">
+                      {cell.content.map((task, idx) => (
+                        <div
+                          key={idx}
+                          className="text-sm p-1 rounded"
+                          style={{ backgroundColor: Array.isArray(cell.backgroundColor) ? cell.backgroundColor[idx] : cell.backgroundColor }}
+                        >
+                          {task}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div 
+                      className="text-sm w-full h-full flex items-center justify-center"
+                      style={{ backgroundColor: cell.backgroundColor }}
+                    >
+                      {cell.content}
+                    </div>
+                  )}
+                  
+                  {/* Batch indicators */}
+                  <div className="absolute top-0 right-0 p-1 flex flex-wrap justify-end gap-1 max-w-[120px]">
+                    {batches.filter(batch => 
+                      batch.position.row === wIdx && 
+                      batch.position.col === dIdx
+                    ).map((batch) => (
+                      <div
+                        key={batch.id}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, batch)}
+                        className="rounded-full text-white text-xs flex items-center justify-center w-6 h-6 cursor-move hover:opacity-80"
+                        style={{ backgroundColor: getProjectColor(batch.projectName) }}
+                        title={`${batch.id} - ${batch.projectName}\n${batch.notes}`}
+                      >
+                        {batch.id}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+
+          {/* Completed Batches Section */}
+          <div className="mt-8 border-t-4 border-gray-300 pt-4">
+            <h3 className="text-xl font-semibold mb-4">Completed Batches</h3>
+            <div
+              className="min-h-32 border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50"
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                const batchId = e.dataTransfer.getData('text/plain');
+                if (draggedBatch) {
+                  setBatches(batches.map(batch => {
+                    if (batch.id === batchId) {
+                      return {
+                        ...batch,
+                        position: { row: -1, col: -1 }, // Special position for completed batches
+                        stage: 'Completed',
+                        timestamp: new Date().toISOString(),
+                        notes: batch.notes + '\nMarked as completed on ' + new Date().toLocaleString()
+                      };
+                    }
+                    return batch;
+                  }));
+                }
+                setDraggedBatch(null);
+              }}
+            >
+              <div className="flex flex-wrap gap-2 p-2">
+                {batches
+                  .filter(batch => batch.stage === 'Completed')
+                  .map((batch) => (
+                    <div
+                      key={batch.id}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, batch)}
+                      className="rounded-full text-white text-xs flex items-center justify-center w-6 h-6 cursor-move hover:opacity-80"
+                      style={{ 
+                        backgroundColor: batch.stage === 'Completed' 
+                          ? '#059669' // green-600
+                          : getProjectColor(batch.projectName)
+                      }}
+                      title={`${batch.id} - ${batch.projectName}\n${batch.notes}`}
+                    >
+                      {batch.id}
+                    </div>
+                  ))}
+              </div>
+              <div className="text-center text-gray-500 text-sm mt-2">
+                {batches.filter(batch => batch.stage === 'Completed').length === 0 
+                  ? 'Drag completed batches here'
+                  : 'Completed batches'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default BatchTracker;
